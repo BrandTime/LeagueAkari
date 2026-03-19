@@ -57,7 +57,7 @@ export class AkariOngoingGameWindow extends BaseAkariWindow<
         autoHideMenuBar: true,
         backgroundColor: '#00000000',
         webPreferences: {
-          backgroundThrottling: true // focusable 和 backgroundThrottling 一起使用, 会出现莫名其妙的 BUG
+          backgroundThrottling: false // focusable 和 backgroundThrottling 一起使用, 会出现莫名其妙的 BUG
         }
       }
     })
@@ -108,7 +108,9 @@ export class AkariOngoingGameWindow extends BaseAkariWindow<
 
         if (this._window) {
           this._window.setIgnoreMouseEvents(true)
-          this.show()
+          // Do not auto-show the window — it stays hidden until the shortcut is pressed.
+          // This avoids keeping a large transparent overlay in the DWM composition
+          // pipeline at all times, which would cap game FPS at the display refresh rate.
         }
       }
     )
@@ -117,9 +119,18 @@ export class AkariOngoingGameWindow extends BaseAkariWindow<
       () => this.state.fakeShow,
       (fakeShow) => {
         if (fakeShow) {
+          // Show the window only when content is actually needed.
+          if (!this.state.show) {
+            this._window?.showInactive()
+          }
           this._window?.setIgnoreMouseEvents(false)
         } else {
           this._window?.setIgnoreMouseEvents(true)
+          // Actually hide the window so it is removed from the DWM composition
+          // pipeline and does not interfere with game rendering.
+          if (this.state.show) {
+            this._window?.hide()
+          }
         }
       },
       { fireImmediately: true }
@@ -137,15 +148,13 @@ export class AkariOngoingGameWindow extends BaseAkariWindow<
               (event) => {
                 if (event.pressed) {
                   if (is.dev || GameClientMain.isGameClientForeground()) {
-                    if (!this.state.show) {
-                      this.show()
-                    }
-
-                    this._window?.setIgnoreMouseEvents(false)
+                    // The fakeShow reaction handles showing the window and enabling
+                    // mouse events; no need to call this.show() explicitly here.
                     this.state.setFakeShow(true)
                   }
                 } else {
-                  this._window?.setIgnoreMouseEvents(true)
+                  // The fakeShow reaction handles hiding the window and disabling
+                  // mouse events.
                   this.state.setFakeShow(false)
                 }
               }
@@ -164,7 +173,8 @@ export class AkariOngoingGameWindow extends BaseAkariWindow<
   }
 
   override hide() {
-    this.state.setFakeShow(true)
+    // Delegate to fakeShow so the window is actually hidden and state stays consistent.
+    this.state.setFakeShow(false)
   }
 
   override async onInit() {
